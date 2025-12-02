@@ -7,14 +7,7 @@
 
 import SwiftUI
 
-struct Activity{
-    let id: Int
-    let title:String
-    let subtitle:String
-    let image:String
-    let tintColour: Color
-    let amount: String
-}
+
 
 struct ActivityCard: View {
     @State var activity: Activity
@@ -31,7 +24,7 @@ struct ActivityCard: View {
                     Spacer()
                     
                     Image(systemName: activity.image)
-                        .foregroundColor(.green)
+                        .foregroundColor(activity.tintColour)
                 }
                 Text(activity.amount)
                     .font(.title)
