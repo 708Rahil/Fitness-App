@@ -82,7 +82,7 @@ class HealthManager{
     }
     
     
-    func fetchTodayStandHours(completion: @escaping(Result<Double, Error>) -> Void){
+    func fetchTodayStandHours(completion: @escaping(Result<Int, Error>) -> Void){
         let stand = HKCategoryType(.appleStandHour)
         let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
         let query = HKSampleQuery(sampleType: stand, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
@@ -90,11 +90,11 @@ class HealthManager{
                 completion(.failure(NSError()))
                 return
             }
-            print(samples)
-            print(samples.map({ $0.value}))
+                        
+            let standCount = samples.filter({$0.value==0}).count
             
               
-            completion(.success(2.0))
+            completion(.success(standCount))
         }
         
         

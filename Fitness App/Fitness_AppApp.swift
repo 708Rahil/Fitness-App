@@ -9,9 +9,15 @@ import SwiftUI
 
 @main
 struct Fitness_AppApp: App {
+    init() {
+        print("App init")
+    }
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HomeView()
+                .onAppear {
+                    print("HomeView appeared")
+                }
         }
     }
 }
