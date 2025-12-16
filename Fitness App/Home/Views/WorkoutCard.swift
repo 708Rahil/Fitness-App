@@ -51,6 +51,6 @@ struct WorkoutCard: View {
 }
 struct WorkoutCard_Previews: PreviewProvider{
     static var previews: some View{
-        WorkoutCard(workout: Workout(id: 0, title: "Running", image: "figure.run", date: "Aug 1", duration: "30 min", calories: "512 kcal", tintColour: .cyan))
+        WorkoutCard(workout: Workout(id: 0, title: "Running", image: "figure.run",tintColour: .cyan,duration: "30 min", date: "Aug 1",  calories: "512 kcal"))
     }
 }

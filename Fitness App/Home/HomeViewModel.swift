@@ -17,6 +17,11 @@ class HomeViewModel: ObservableObject {
     @Published var stand:Int = 0
     
     @Published var activities = [Activity]()
+    @Published var workouts = [
+        Workout(id: 0, title: "Running", image: "figure.run",tintColour: .green, duration: "30 min", date: "Aug 1", calories: "512 kcal" ),
+        Workout(id: 1, title: "Bench Press", image: "figure.strengthtraining.traditional", tintColour: .blue,duration: "45 min", date: "Aug 3", calories: "592 kcal"),
+        Workout(id: 2, title: "Walk", image: "figure.walk", tintColour: .red,duration: "30 min", date: "Aug 5", calories: "212 kcal"),
+        Workout(id: 3, title: "Swimming", image: "figure.pool.swim",tintColour: .cyan ,duration: "30 min",date: "Aug 9", calories: "640 kcal" )]
     
     
     var mockActivities: [Activity] = [
@@ -27,10 +32,10 @@ class HomeViewModel: ObservableObject {
     ]
     
     var mockWorkouts: [Workout] = [
-        Workout(id: 0, title: "Running", image: "figure.run", date: "Aug 1", duration: "30 min", calories: "512 kcal", tintColour: .green),
-        Workout(id: 1, title: "Bench Press", image: "figure.strengthtraining.traditional", date: "Aug 3", duration: "45 min", calories: "592 kcal", tintColour: .blue),
-        Workout(id: 2, title: "Walk", image: "figure.walk", date: "Aug 5", duration: "30 min", calories: "212 kcal", tintColour: .red),
-        Workout(id: 3, title: "Swimming", image: "figure.pool.swim", date: "Aug 9", duration: "30 min", calories: "640 kcal", tintColour: .cyan)]
+        Workout(id: 0, title: "Running", image: "figure.run",tintColour: .green, duration: "30 min", date: "Aug 1", calories: "512 kcal" ),
+        Workout(id: 1, title: "Bench Press", image: "figure.strengthtraining.traditional", tintColour: .blue,duration: "45 min", date: "Aug 3", calories: "592 kcal"),
+        Workout(id: 2, title: "Walk", image: "figure.walk", tintColour: .red,duration: "30 min", date: "Aug 5", calories: "212 kcal"),
+        Workout(id: 3, title: "Swimming", image: "figure.pool.swim",tintColour: .cyan ,duration: "30 min",date: "Aug 9", calories: "640 kcal" )]
     
     init() {
         Task{
@@ -41,12 +46,10 @@ class HomeViewModel: ObservableObject {
                 fetchTodayStandHours()
                 fetchTodaysSteps()
                 fetchCurrentWeekActivities()
-                
-                
-                
-                
+                fetchRecentWorkouts()
             } catch {
                 print(error.localizedDescription)
+                
             }
         }
         
@@ -131,6 +134,19 @@ class HomeViewModel: ObservableObject {
             }
             
         }
+    }
+    
+    func fetchRecentWorkouts() {
+        healthManager.fetchWorkoutsForMonth(month: Date()) { result in
+            switch result {
+            case .success(let workouts):
+                DispatchQueue.main.async {
+                    self.workouts = workouts
+                }
+            case .failure(let failure):
+                print(failure.localizedDescription)
+                
+            }}
     }
     
     
