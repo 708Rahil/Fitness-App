@@ -2,244 +2,348 @@
 //  HealthManager.swift
 //  Fitness App
 //
-//  Created by Rahil Gandhi on 2025-12-02.
-//
-import SwiftUI
+
 import Foundation
+import Combine
 import HealthKit
+import SwiftUI
+
+// MARK: - Date Helpers
 
 extension Date {
     static var startOfDay: Date {
-        let calendar = Calendar.current
-        return calendar.startOfDay(for: Date())
+        Calendar.current.startOfDay(for: Date())
     }
-    
-    static var startOfWeek: Date {
-        let calendar = Calendar.current
-        var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
-        components.weekday = 2
-        return calendar.date(from: components) ?? Date()
-    }
-    
-    func fetchMonthStartAndEndDate() -> (Date, Date){
-        let calendar = Calendar.current
-        let startDateComponent = calendar.dateComponents([.year, .month], from: calendar.startOfDay(for: self))
-        let startDate = calendar.date(from: startDateComponent) ?? self
-        
-        let endDate = calendar.date(byAdding: DateComponents(month: 1, day:  -1), to: startDate) ?? self
-        
-        return (startDate, endDate)
-    }
-    
-    
+
     func formatWorkoutDate() -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(self) { return "Today" }
+        if calendar.isDateInYesterday(self) { return "Yesterday" }
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         return formatter.string(from: self)
-        
-            
     }
 }
+
+// MARK: - Number Helpers
 
 extension Double {
-    func formattedNumberString() -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        
-        return formatter.string(from: NSNumber(value: self)) ?? "0"
-    
+    func formattedString() -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: self)) ?? "0"
     }
 }
 
-class HealthManager{
-    
-    
+extension Int {
+    func formattedString() -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: self)) ?? "\(self)"
+    }
+}
+
+extension TimeInterval {
+    func formattedDuration() -> String {
+        let mins = Int(self) / 60
+        let hrs = mins / 60
+        let remaining = mins % 60
+        if hrs > 0 { return "\(hrs)h \(remaining)m" }
+        return "\(mins) min"
+    }
+}
+
+// MARK: - HealthManager
+
+final class HealthManager: ObservableObject {
+
     static let shared = HealthManager()
-    
+
     let healthStore = HKHealthStore()
-    
-    private init () {
-        
-        
+
+    // Today ring values
+    @Published var todayCalories: Int = 0
+    @Published var todayExerciseMinutes: Int = 0
+    @Published var todayStandHours: Int = 0
+    @Published var todaySteps: Int = 0
+    @Published var todayDistance: Double = 0
+    @Published var todayHeartRate: Double = 0
+
+    // Derived UI data
+    @Published var activities: [Activity] = []
+    @Published var recentWorkouts: [Workout] = []
+
+    // Chart data
+    @Published var weeklySteps: [DailyStepModel] = []
+    @Published var monthlySteps: [MonthlyStepModel] = []
+    @Published var weeklyCalories: [DailyStepModel] = []
+
+    private init() {
+        requestAuthorization()
     }
-    
-    
-    func requestHealthKitAccess() async throws {
-        let calories = HKQuantityType(.activeEnergyBurned)
-        let exercise = HKQuantityType(.appleExerciseTime)
-        let stand = HKCategoryType(.appleStandHour)
-        let steps = HKQuantityType(.stepCount)
-        let workouts = HKSampleType.workoutType()
-        let healthTypes: Set = [calories, exercise, stand, steps, workouts]
-        try await healthStore.requestAuthorization(toShare: [], read:healthTypes)
-        
-        
-    }
-    
-    
-    
-    func fetchTodayCaloriesBurned(completion: @escaping(Result<Double, Error>) -> Void){
-        let calories = HKQuantityType(.activeEnergyBurned)
-        let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
-        let query = HKStatisticsQuery(quantityType: calories, quantitySamplePredicate: predicate) { _, results,
-            error in
-            guard let quantity = results?.sumQuantity(), error == nil else {
-                completion(.failure(URLError(.badURL)))
-                return
-                
-            }
-            let calorieCount = quantity.doubleValue(for: .kilocalorie())
-            completion(.success(calorieCount))
-            
-        }
-        healthStore.execute(query)
-        
-        
-    }
-    
-    
-    func fetchTodayExerciseTime(completion: @escaping(Result<Double, Error>) -> Void){
-        let exercise = HKQuantityType(.appleExerciseTime)
-        let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
-        let query = HKStatisticsQuery(quantityType: exercise, quantitySamplePredicate: predicate) { _, results,
-            error in
-            guard let quantity = results?.sumQuantity(), error == nil else {
-                completion(.failure(NSError()))
-                return
-                
-            }
-            let exerciseTime = quantity.doubleValue(for: .minute())
-            completion(.success(exerciseTime))
-            
-        }
-        healthStore.execute(query)
-        
-        
-    }
-    
-    
-    func fetchTodayStandHours(completion: @escaping(Result<Int, Error>) -> Void){
-        let stand = HKCategoryType(.appleStandHour)
-        let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
-        let query = HKSampleQuery(sampleType: stand, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
-            guard let samples = results as? [HKCategorySample], error == nil else {
-                completion(.failure(NSError()))
-                return
-            }
-                        
-            let standCount = samples.filter({$0.value==0}).count
-            completion(.success(standCount))
-        }
-    
-        healthStore.execute(query)
-        
-    }
-    
-    // MARK: Fitness Activity
-    
-    func fetchTodaySteps(completion: @escaping(Result<Activity, Error>) -> Void){
-        let steps = HKQuantityType(.stepCount)
-        let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
-        let query = HKStatisticsQuery(quantityType: steps, quantitySamplePredicate: predicate) { _, results,
-            error in
-            guard let quantity = results?.sumQuantity(), error == nil else {
-                completion(.failure(NSError()))
-                return
-                
-            }
-            let steps = quantity.doubleValue(for: .count())
-            let activity = Activity(title: "Today Steps", subtitle: "Goal:800", image: "figure.walk", tintColour: .green, amount: steps.formattedNumberString())
-            completion(.success(activity))
-            
-        }
-        healthStore.execute(query)
-        
-        
-    }
-    func fetchCurrentWeekWorkoutStats(completion: @escaping (Result<[Activity], Error>)-> Void){
-        let workouts = HKSampleType.workoutType()
-        let predicate = HKQuery.predicateForSamples(withStart: .startOfWeek, end: Date())
-        let query = HKSampleQuery(sampleType: workouts, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { [weak self] _, results, error in
-            guard let workouts = results as? [HKWorkout], let self = self, error == nil else {
-                completion(.failure(NSError()))
-                return
-            }
-            var runningCount: Int = 0
-            var strengthCount:Int = 0
-            var soccerCount:Int = 0
-            var basketballCount: Int = 0
-            var stairsCount: Int = 0
-            var kickboxingCount: Int = 0
-            
-            for workout in workouts{
-                let duration = Int(workout.duration)/60
-                if workout.workoutActivityType == .running {
-                    runningCount += duration
-                } else if workout.workoutActivityType == .traditionalStrengthTraining {
-                    strengthCount += duration
-                } else if workout.workoutActivityType == .soccer {
-                    soccerCount += duration
-                } else if workout.workoutActivityType == .basketball {
-                    basketballCount += duration
-                } else if workout.workoutActivityType == .stairClimbing {
-                    stairsCount += duration
-                } else if workout.workoutActivityType == .kickboxing {
-                    kickboxingCount += duration
-                }
-                    
-            }
-            
-            completion(.success(generateActivitiesFromDurations(running: runningCount, strength: strengthCount, soccer: soccerCount, basketball: basketballCount, stairs: stairsCount, kickboxing: kickboxingCount)))
-                        
-        }
-        healthStore.execute(query)
-        
-    }
-    func generateActivitiesFromDurations(running: Int, strength: Int, soccer: Int, basketball: Int, stairs: Int, kickboxing: Int) -> [Activity] {
-        
-        return [
-            Activity(title: "Running", subtitle: "This Week", image: "figure.run", tintColour: .green, amount: "\(running) mins"),
-            Activity(title: "Strength Training", subtitle: "This Week", image: "dumbell", tintColour: .green, amount: "\(strength) mins"),
-            Activity(title: "Soccer", subtitle: "This Week", image: "figure.soccer", tintColour: .green, amount: "\(soccer) mins"),
-            Activity(title: "Basketball", subtitle: "This Week", image: "figure.basketball", tintColour: .green, amount: "\(basketball) mins"),
-            Activity(title: "StairStepper", subtitle: "This Week", image: "figure.stairs", tintColour: .green, amount: "\(stairs) mins"),
-            Activity(title: "Kickboxing", subtitle: "This Week", image: "figure.kickboxing", tintColour: .green, amount: "\(kickboxing) mins"),
-            
+
+    // MARK: - Authorization
+
+    func requestAuthorization() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+
+        let typesToRead: Set<HKObjectType> = [
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
+            HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
+            HKObjectType.categoryType(forIdentifier: .appleStandHour)!,
+            HKObjectType.workoutType()
         ]
-        
-        
-    }
-    
-    // MARK: Recent Workouts
-    
-    func fetchWorkoutsForMonth(month: Date, completion: @escaping (Result<[Workout], Error>)-> Void){
-        
-        let workouts = HKSampleType.workoutType()
-        let (startDate, endDate) = month.fetchMonthStartAndEndDate()
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate)
-        
-        
-        
-        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-        let query = HKSampleQuery(sampleType: workouts, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]){ _, results, error in
-            guard let workouts = results as? [HKWorkout], error == nil else {
-                completion(.failure(URLError(.badURL)))
+
+        healthStore.requestAuthorization(toShare: [], read: typesToRead) { success, error in
+            guard success else {
+                if let error { print("HealthKit auth error: \(error.localizedDescription)") }
                 return
-                
             }
-            
-        
-            
-            
-            let workoutsArray = workouts.map ( {Workout(id: nil, title: $0.workoutActivityType.name, image: $0.workoutActivityType.image, tintColour: $0.workoutActivityType.color, duration: "\(Int($0.duration)/60)",  date: $0.startDate.formatWorkoutDate(), calories: $0.totalEnergyBurned?.doubleValue(for: .kilocalorie()).formattedNumberString() ?? "-")})
-            completion(.success(workoutsArray))
-            
-            
+            DispatchQueue.main.async { self.fetchAllData() }
+        }
+    }
+
+    // MARK: - Fetch All
+
+    func fetchAllData() {
+        fetchTodayCalories()
+        fetchTodayExerciseMinutes()
+        fetchTodayStandHours()
+        fetchTodaySteps()
+        fetchTodayDistance()
+        fetchTodayHeartRate()
+        fetchRecentWorkouts()
+        fetchWeeklySteps()
+        fetchMonthlySteps()
+        fetchWeeklyCalories()
+    }
+
+    // MARK: - Today Stats
+
+    func fetchTodayCalories() {
+        fetchSum(identifier: .activeEnergyBurned, unit: .kilocalorie()) { value in
+            self.todayCalories = Int(value)
+            self.buildActivities()
+        }
+    }
+
+    func fetchTodayExerciseMinutes() {
+        fetchSum(identifier: .appleExerciseTime, unit: .minute()) { value in
+            self.todayExerciseMinutes = Int(value)
+            self.buildActivities()
+        }
+    }
+
+    func fetchTodaySteps() {
+        fetchSum(identifier: .stepCount, unit: .count()) { value in
+            self.todaySteps = Int(value)
+            self.buildActivities()
+        }
+    }
+
+    func fetchTodayDistance() {
+        fetchSum(identifier: .distanceWalkingRunning, unit: .meterUnit(with: .kilo)) { value in
+            self.todayDistance = value
+            self.buildActivities()
+        }
+    }
+
+    func fetchTodayStandHours() {
+        guard let type = HKCategoryType.categoryType(forIdentifier: .appleStandHour) else { return }
+        let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+            guard let samples = samples as? [HKCategorySample] else { return }
+            let count = samples.filter { $0.value == HKCategoryValueAppleStandHour.stood.rawValue }.count
+            DispatchQueue.main.async {
+                self.todayStandHours = count
+                self.buildActivities()
+            }
         }
         healthStore.execute(query)
-        
-        
     }
-    
+
+    func fetchTodayHeartRate() {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
+        let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+            guard let sample = samples?.first as? HKQuantitySample else { return }
+            let bpm = sample.quantity.doubleValue(for: HKUnit(from: "count/min"))
+            DispatchQueue.main.async {
+                self.todayHeartRate = bpm
+                self.buildActivities()
+            }
+        }
+        healthStore.execute(query)
+    }
+
+    // MARK: - Generic cumulative sum helper
+
+    private func fetchSum(identifier: HKQuantityTypeIdentifier, unit: HKUnit, completion: @escaping (Double) -> Void) {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return }
+        let predicate = HKQuery.predicateForSamples(withStart: .startOfDay, end: Date())
+        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, _ in
+            guard let quantity = result?.sumQuantity() else { return }
+            DispatchQueue.main.async { completion(quantity.doubleValue(for: unit)) }
+        }
+        healthStore.execute(query)
+    }
+
+    // MARK: - Build Activities Grid (call on main thread)
+
+    func buildActivities() {
+        activities = [
+            Activity(title: "Today's Steps",   subtitle: "Goal: 10,000",    image: "figure.walk",  tintColour: .green,  amount: todaySteps.formattedString()),
+            Activity(title: "Active Calories", subtitle: "Goal: 600 kcal",  image: "flame",        tintColour: .orange, amount: "\(todayCalories) kcal"),
+            Activity(title: "Distance",        subtitle: "Goal: 5 km",      image: "map",          tintColour: .blue,   amount: String(format: "%.2f km", todayDistance)),
+            Activity(title: "Exercise",        subtitle: "Goal: 30 min",    image: "timer",        tintColour: .yellow, amount: "\(todayExerciseMinutes) min"),
+            Activity(title: "Stand Hours",     subtitle: "Goal: 12 hrs",    image: "person.fill",  tintColour: .cyan,   amount: "\(todayStandHours) hrs"),
+            Activity(title: "Heart Rate",      subtitle: "Latest reading",  image: "heart.fill",   tintColour: .red,    amount: todayHeartRate > 0 ? "\(Int(todayHeartRate)) bpm" : "--")
+        ]
+    }
+
+    // MARK: - Recent Workouts
+
+    func fetchRecentWorkouts() {
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let query = HKSampleQuery(sampleType: .workoutType(), predicate: nil, limit: 20, sortDescriptors: [sort]) { _, samples, _ in
+            guard let workouts = samples as? [HKWorkout] else { return }
+            let mapped: [Workout] = workouts.enumerated().map { index, workout in
+                Workout(
+                    id: index,
+                    title: workout.workoutActivityType.workoutName,
+                    image: workout.workoutActivityType.workoutImage,
+                    tintColour: workout.workoutActivityType.tintColor,
+                    duration: workout.duration.formattedDuration(),
+                    date: workout.startDate.formatWorkoutDate(),
+                    calories: workout.totalEnergyBurned.map { "\(Int($0.doubleValue(for: .kilocalorie()))) kcal" } ?? "N/A"
+                )
+            }
+            DispatchQueue.main.async { self.recentWorkouts = mapped }
+        }
+        healthStore.execute(query)
+    }
+
+    // MARK: - Chart Data
+
+    func fetchWeeklySteps() {
+        fetchDailyStats(identifier: .stepCount, days: 7, unit: .count()) { data in
+            self.weeklySteps = data.map { DailyStepModel(date: $0.date, stepCount: $0.value) }
+        }
+    }
+
+    func fetchMonthlySteps() {
+        fetchDailyStats(identifier: .stepCount, days: 30, unit: .count()) { data in
+            self.monthlySteps = data.map { MonthlyStepModel(date: $0.date, stepCount: $0.value) }
+        }
+    }
+
+    func fetchWeeklyCalories() {
+        fetchDailyStats(identifier: .activeEnergyBurned, days: 7, unit: .kilocalorie()) { data in
+            self.weeklyCalories = data.map { DailyStepModel(date: $0.date, stepCount: $0.value) }
+        }
+    }
+
+    private func fetchDailyStats(
+        identifier: HKQuantityTypeIdentifier,
+        days: Int,
+        unit: HKUnit,
+        completion: @escaping ([(date: Date, value: Double)]) -> Void
+    ) {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return }
+        let calendar = Calendar.current
+        let startDate = calendar.date(byAdding: .day, value: -(days - 1), to: .startOfDay)!
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: Date())
+        let anchorDate = calendar.startOfDay(for: Date())
+
+        let query = HKStatisticsCollectionQuery(
+            quantityType: type,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum,
+            anchorDate: anchorDate,
+            intervalComponents: DateComponents(day: 1)
+        )
+
+        query.initialResultsHandler = { _, results, _ in
+            guard let results else { return }
+            var data: [(date: Date, value: Double)] = []
+            results.enumerateStatistics(from: startDate, to: Date()) { stats, _ in
+                data.append((stats.startDate, stats.sumQuantity()?.doubleValue(for: unit) ?? 0))
+            }
+            DispatchQueue.main.async { completion(data) }
+        }
+        healthStore.execute(query)
+    }
+}
+
+// MARK: - HKWorkoutActivityType Extensions
+
+extension HKWorkoutActivityType {
+    var workoutName: String {
+        switch self {
+        case .running:                                              return "Running"
+        case .cycling:                                             return "Cycling"
+        case .walking:                                             return "Walking"
+        case .swimming:                                            return "Swimming"
+        case .yoga:                                                return "Yoga"
+        case .functionalStrengthTraining,
+             .traditionalStrengthTraining:                         return "Strength Training"
+        case .highIntensityIntervalTraining:                       return "HIIT"
+        case .hiking:                                              return "Hiking"
+        case .basketball:                                          return "Basketball"
+        case .soccer:                                              return "Soccer"
+        case .tennis:                                              return "Tennis"
+        case .rowing:                                              return "Rowing"
+        case .elliptical:                                          return "Elliptical"
+        case .stairClimbing:                                       return "Stair Climbing"
+        case .dance:                                               return "Dance"
+        case .pilates:                                             return "Pilates"
+        default:                                                   return "Workout"
+        }
+    }
+
+    var workoutImage: String {
+        switch self {
+        case .running:                                             return "figure.run"
+        case .cycling:                                             return "figure.outdoor.cycle"
+        case .walking:                                             return "figure.walk"
+        case .swimming:                                            return "figure.pool.swim"
+        case .yoga:                                                return "figure.yoga"
+        case .functionalStrengthTraining,
+             .traditionalStrengthTraining:                         return "dumbbell"
+        case .highIntensityIntervalTraining:                       return "bolt.fill"
+        case .hiking:                                              return "figure.hiking"
+        case .basketball:                                          return "basketball"
+        case .soccer:                                              return "soccerball"
+        case .tennis:                                              return "tennis.racket"
+        case .rowing:                                              return "figure.rowing"
+        case .elliptical:                                          return "figure.elliptical"
+        case .stairClimbing:                                       return "figure.stair.stepper"
+        case .dance:                                               return "figure.dance"
+        case .pilates:                                             return "figure.pilates"
+        default:                                                   return "figure.mixed.cardio"
+        }
+    }
+
+    var tintColor: Color {
+        switch self {
+        case .running:                                             return .cyan
+        case .cycling:                                             return .orange
+        case .walking:                                             return .green
+        case .swimming:                                            return .blue
+        case .yoga:                                                return .purple
+        case .functionalStrengthTraining,
+             .traditionalStrengthTraining:                         return .indigo
+        case .highIntensityIntervalTraining:                       return .red
+        case .hiking:                                              return .brown
+        case .basketball:                                          return .orange
+        case .soccer:                                              return .green
+        case .tennis:                                              return .yellow
+        default:                                                   return .teal
+        }
+    }
 }

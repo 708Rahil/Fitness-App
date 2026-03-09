@@ -2,8 +2,6 @@
 //  ProgressCircleView.swift
 //  Fitness App
 //
-//  Created by Rahil Gandhi on 2025-11-27.
-//
 
 import SwiftUI
 
@@ -12,24 +10,23 @@ struct ProgressCircleView: View {
     var goal: Int
     var color: Color
     private let width: CGFloat = 20
-    
+
     var body: some View {
-        ZStack{
+        ZStack {
             Circle()
-                .stroke(color.opacity(0.3),lineWidth: width)
+                .stroke(color.opacity(0.3), lineWidth: width)
             Circle()
-                .trim(from:0,to:CGFloat(progress)/CGFloat(goal))
-                .stroke(color,style: StrokeStyle(lineWidth:width , lineCap: .round))
+                .trim(from: 0, to: min(CGFloat(progress) / CGFloat(goal), 1.0))
+                .stroke(color, style: StrokeStyle(lineWidth: width, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .shadow(radius: 5)
-            
-            
+                .animation(.easeInOut(duration: 1.0), value: progress)
         }
         .padding()
     }
 }
 
-struct ProgressCircle_Previews: PreviewProvider {
+struct ProgressCircleView_Previews: PreviewProvider {
     static var previews: some View {
         ProgressCircleView(progress: .constant(100), goal: 200, color: .red)
     }

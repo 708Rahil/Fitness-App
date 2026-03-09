@@ -7,10 +7,10 @@
 
 import SwiftUI
 
-struct Activity{
-    let title:String
-    let subtitle:String
-    let image:String
+struct Activity {
+    let title: String
+    let subtitle: String
+    let image: String
     let tintColour: Color
     let amount: String
 }
