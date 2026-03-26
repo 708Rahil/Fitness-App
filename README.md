@@ -1,4 +1,4 @@
-FitTrack 🚀
+# FitTrack 🚀
 
 GitHub stars · GitHub issues · GitHub license
 
